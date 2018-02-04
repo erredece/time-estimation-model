@@ -10,7 +10,7 @@ params <- list(
   a = 1.1, 
   b = 0.015, 
   t0 = 11,
-  decay = 0.5, # I changed the sign since it gave a more approximate result, default is 0.5
+  decay = 0.5,
   tau = 20,
   subjects = 50, 
   numBlocks = 2,
@@ -128,7 +128,12 @@ chunkActivation <- function(encounters, currentTime){
 
 # Probability of retrieving chunk based on its activation
 calculateProbability <- function(currentActivation, totalActivation){
-  prob <- (sum(currentActivation) / params$tau) / ( totalActivation / params$tau )
+  if(currentActivation >= totalActivation){
+    prob <- (sum(currentActivation) / params$tau) / ( totalActivation / params$tau )
+  }
+  else{
+    prob <- (sum(currentActivation) / params$tau) / ( totalActivation * 1.065 / params$tau )
+  }
 }
 
 # Implementing blending
@@ -175,30 +180,34 @@ experimentTrial <- function(currentCondition, currentBlock, subjectInfo){
     blendedResponse <- blending(subjectInfo)
     
     # Modifying the response based on the previous one.
-    
-    if(i>1 && blendedResponse != (0 || msecToPulses((-500 * 
-                                                     as.numeric(subjectInfo$subjectData[i - 1, 7])) /
-                                                    tp ))){ 
-      blendedResponse <- blendedResponse  - 
-        msecToPulses((-500 * as.numeric(subjectInfo$subjectData[i - 1, 7])) / tp ) 
-      }
 
-    if(i>1 && blendedResponse != (0 || msecToPulses((-100 * 
-                                                     as.numeric(subjectInfo$subjectData[i - 1, 7])) / 
-                                                    tp ))){ 
-      blendedResponse <- blendedResponse  -  
-        msecToPulses((-100 * as.numeric(subjectInfo$subjectData[i - 1, 7])) / tp ) 
+    if(i>1 && blendedResponse != (0 || msecToPulses((10 *
+                                                     as.numeric(subjectInfo$subjectData[i - 1, 7])) /
+                                                    tp ))){
+      blendedResponse <- blendedResponse  -
+        msecToPulses((10 * as.numeric(subjectInfo$subjectData[i - 1, 7])) / tp )
     }
+    
+    # Modifying the response based on the previous two ones.
+
+    if(i>2 && blendedResponse != (0 || msecToPulses((5 *
+                                                     as.numeric(subjectInfo$subjectData[i - 2, 7])) /
+                                                    tp ))){
+      blendedResponse <- blendedResponse  -
+        msecToPulses((5 * as.numeric(subjectInfo$subjectData[i - 2, 7])) / tp )
+    }
+    
+    # Modifying the response based on the size of the stimulus
 
     if(currentSample[i] == min(currentSample)) {
-      blendedResponse <- blendedResponse * 0.98
+      blendedResponse <- blendedResponse * 0.95
       }
     else if(currentSample[i] == max(currentSample)) {
-          blendedResponse <- blendedResponse * 1.02
+          blendedResponse <- blendedResponse * 1.05
     }
     else if(currentSample[i] != (max(currentSample) || min(currentSample))){
-      switch(currentCondition, blendedResponse <- blendedResponse * 0.998, 
-             blendedResponse <- blendedResponse * 1.002)
+      switch(currentCondition, blendedResponse <- blendedResponse * 0.98,
+             blendedResponse <- blendedResponse * 1.02)
     }
     
     tp <- pulsesToMsec(blendedResponse)
@@ -234,7 +243,7 @@ train <- function(currentCondition, currentBlock, subjectInfo){
 
 # Combining it all in the framework of the experiment
 experiment <- function(){
-  simulatedData <- data.frame(matrix(ncol=6, nrow=0))
+  simulatedData <- data.frame(matrix(ncol=7, nrow=0))
   
   
   # Loop per subject
@@ -254,7 +263,7 @@ experiment <- function(){
 
 }
 
-# Run experiment
+# Function for running the experiment and plotting
 
 run <- function(){
   experiment <- experiment()
@@ -277,8 +286,8 @@ run <- function(){
   plotdatBlock1 <- plotdat[Block==1,list(mTp=mean(mTp),sdTp=sd(mTp)),by=list(Block,Cond,Ts)]
   
   setkey(plotdatBlock1,Ts)
-  plotdatBlock1[Cond==1,plot(Ts,mTp,type="b",pch=20,xlim=c(500,1500),ylim=c(500,1500), col="red")]
-  plotdatBlock1[Cond==2,lines(Ts,mTp,type="b",pch=20,xlim=c(500,1500),ylim=c(500,1500),col="darkgreen")]
+  plotdatBlock1[Cond==1,plot(Ts,mTp,type="b",pch=20,xlim=c(500,1500),ylim=c(500,1500), col="cyan", xlab="Stimulus presented (ms)", ylab="Stimulus produced (ms)")]
+  plotdatBlock1[Cond==2,lines(Ts,mTp,type="b",pch=20,xlim=c(500,1500),ylim=c(500,1500),col="magenta")]
   
   abline(a=0,b=1,lty=2)
   
@@ -286,11 +295,15 @@ run <- function(){
   setkey(plotdatBlock2,Ts)
   
   for (group in c("a","b","c")) {
-    colourID <- 1
-    for (lengthC in c(1,2)) {
-      plotdatBlock2[Group==group & Cond==lengthC,
-                    lines(Ts,mTp,type="b",pch=toupper(group), col=colourID)]
-    }
-    colourID <- colourID + 1 
+    plotdatBlock2[Group==group & Cond==1,
+                  lines(Ts,mTp,type="b",pch=toupper(group), col="blue")]
+    plotdatBlock2[Group==group & Cond==2,
+                  lines(Ts,mTp,type="b",pch=toupper(group), col="red")]
   }
+  
 }
+  
+## RUN THE EXPERIMENT ##
+run()
+
+
