@@ -11,8 +11,9 @@ params <- list(
   b = 0.015, 
   t0 = 11,
   decay = 0.5,
-  tau = 20,
-  subjects = 50, 
+  tau = 100,
+  subjects = 50,
+  chunks = 35,
   numBlocks = 2,
   trials = 90,
   groups = c("a", "b", "c")
@@ -64,7 +65,7 @@ pulsesToMsec <- function(p) {
 # Setting up the basics of the experiment  
 setupExperiment <- function(currentSubject){
   time <- 0 #Real time on the experiment
-  D <- matrix(NA, 35, 900) # Declarative memory
+  D <- matrix(NA, params$chunks, 900) # Declarative memory
   block <- 1
   shortValuesB1 <- c(630, 750, 900)
   longValuesB1 <- c(900, 1080, 1300)
@@ -126,40 +127,33 @@ chunkActivation <- function(encounters, currentTime){
   }
 }
 
-# Probability of retrieving chunk based on its activation
-calculateProbability <- function(currentActivation, totalActivation){
-  if(currentActivation >= totalActivation){
-    prob <- (sum(currentActivation) / params$tau) / ( totalActivation / params$tau )
-  }
-  else{
-    prob <- (sum(currentActivation) / params$tau) / ( totalActivation * 1.065 / params$tau )
-  }
-}
 
 # Implementing blending
 blending <- function(subjectInfo){
   blendedResponse <- 0
-  totalActivation <- 0
-  
-  for(row in 1:nrow(subjectInfo$D)){
-    numberOfPresentations <- sum(!is.na(subjectInfo$D[row, ]))
-    if(numberOfPresentations > 0){
-      encounters <- getEncounter(subjectInfo, row)
-      currentActivation <- chunkActivation(encounters, subjectInfo$time)
-      totalActivation <- totalActivation + currentActivation 
+
+  blendedActivation <- array(rep(0, params$chunks))
+  blendedProbability <- array(rep(0, params$chunks))
+  blend <- array(rep(0, params$chunks))
+
+  for(chunk in 1:params$chunks){
+    if(!is.na(subjectInfo$D[chunk])){
+      blendedActivation[chunk] <- exp((chunkActivation(getEncounter(subjectInfo, chunk), 
+                                                       subjectInfo$time))/params$tau)
     }
   }
-  for(row in 1:nrow(subjectInfo$D)){
-    numberOfPresentations <- sum(!is.na(subjectInfo$D[row, ]))
-    if(numberOfPresentations > 0){
-      encounters <- getEncounter(subjectInfo, row)
-      currentActivation <- chunkActivation(encounters, subjectInfo$time)
-      prob <- calculateProbability(currentActivation, totalActivation)
-      blendedResponse <- blendedResponse + (prob * row)
+
+  for(chunk in 1:params$chunks){
+    if(!is.na(subjectInfo$D[chunk])){
+      blendedProbability[chunk] <- exp((chunkActivation(getEncounter(subjectInfo, chunk), 
+                                                        subjectInfo$time))/ 
+                                         params$tau)/(sum(blendedActivation, na.rm = TRUE))
+      
+      blend[chunk] <- blendedProbability[chunk] * chunk 
     }
   }
+  blendedResponse <- sum(blend, na.rm = TRUE)
   blendedResponse
- 
 }
 
 # Setting up an individual trial
@@ -178,41 +172,7 @@ experimentTrial <- function(currentCondition, currentBlock, subjectInfo){
     pulse <- msecToPulses(ts)
     subjectInfo <- addEncounter(subjectInfo, pulse)
     blendedResponse <- blending(subjectInfo)
-    
-    # Modifying the response based on the previous one.
-
-    if(i>1 && blendedResponse != (0 || msecToPulses((10 *
-                                                     as.numeric(subjectInfo$subjectData[i - 1, 7])) /
-                                                    tp ))){
-      blendedResponse <- blendedResponse  -
-        msecToPulses((10 * as.numeric(subjectInfo$subjectData[i - 1, 7])) / tp )
-    }
-    
-    # Modifying the response based on the previous two ones.
-
-    if(i>2 && blendedResponse != (0 || msecToPulses((5 *
-                                                     as.numeric(subjectInfo$subjectData[i - 2, 7])) /
-                                                    tp ))){
-      blendedResponse <- blendedResponse  -
-        msecToPulses((5 * as.numeric(subjectInfo$subjectData[i - 2, 7])) / tp )
-    }
-    
-    # Modifying the response based on the size of the stimulus
-
-    if(currentSample[i] == min(currentSample)) {
-      blendedResponse <- blendedResponse * 0.95
-      }
-    else if(currentSample[i] == max(currentSample)) {
-          blendedResponse <- blendedResponse * 1.05
-    }
-    else if(currentSample[i] != (max(currentSample) || min(currentSample))){
-      switch(currentCondition, blendedResponse <- blendedResponse * 0.98,
-             blendedResponse <- blendedResponse * 1.02)
-    }
-    
     tp <- pulsesToMsec(blendedResponse)
-
-    
     subjectInfo$time <- subjectInfo$time + tp + subjectInfo$fixation2
     subjectInfo$subjectData <- rbind(subjectInfo$subjectData, c(subjectInfo$subjectID, 
                                                                 subjectInfo$group, 
@@ -250,7 +210,7 @@ experiment <- function(){
   for(subjectNumber in 1:params$subjects){
     for(currentBlock in 1:params$numBlocks){
       subjectInfo <- setupExperiment(subjectNumber)
-      subjectInfo$D <- matrix(NA, 35, 900)
+      subjectInfo$D <- matrix(NA, params$chunks, 900)
       subjectInfo <- train(is.even(subjectNumber), currentBlock, subjectInfo)
       subjectInfo <- experimentTrial(is.even(subjectNumber), currentBlock, subjectInfo)
       simulatedData <- rbind(simulatedData, subjectInfo$subjectData)
